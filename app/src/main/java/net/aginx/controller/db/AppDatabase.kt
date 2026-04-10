@@ -10,19 +10,15 @@ import net.aginx.controller.db.entities.*
 @Database(
     entities = [
         AginxEntity::class,
-        AgentEntity::class,
-        MessageEntity::class,
-        ConversationEntity::class
+        AgentEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun aginxDao(): AginxDao
     abstract fun agentDao(): AgentDao
-    abstract fun messageDao(): MessageDao
-    abstract fun conversationDao(): ConversationDao
 
     companion object {
         @Volatile

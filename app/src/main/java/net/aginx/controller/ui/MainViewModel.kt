@@ -1,35 +1,40 @@
 package net.aginx.controller.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import net.aginx.controller.client.AgentClient
+import net.aginx.controller.client.AginxiumAdapter
 import net.aginx.controller.client.AgentInfo
 import net.aginx.controller.client.ConnectionState
-import net.aginx.controller.client.DiscoveredAgent
-import net.aginx.controller.client.DiscoverResult
 import net.aginx.controller.client.SendMessageResult
+import net.aginx.controller.client.ServerConversation
 import net.aginx.controller.data.model.Aginx
+import net.aginx.controller.data.model.MessageContent
+import net.aginx.controller.data.model.RequestPermissionNotification
+import net.aginx.controller.data.model.SessionUpdate
+import net.aginx.controller.data.model.SessionUpdateNotification
 import net.aginx.controller.db.AppDatabase
+import net.aginx.controller.db.entities.AgentEntity
 import net.aginx.controller.db.entities.AginxEntity
-import net.aginx.controller.db.entities.ConversationEntity
-import net.aginx.controller.db.entities.MessageEntity
-import java.util.UUID
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
+
+    companion object {
+        private const val TAG = "MainViewModel"
+    }
 
     private val db = AppDatabase.getInstance(application)
     private val aginxDao = db.aginxDao()
     private val agentDao = db.agentDao()
-    private val conversationDao = db.conversationDao()
-    private val messageDao = db.messageDao()
 
     // Aginx 列表
     private val _aginxList = MutableStateFlow<List<Aginx>>(emptyList())
@@ -47,11 +52,110 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    // 当前客户端
-    private var currentClient: AgentClient? = null
+    // 当前客户端（aginxium Rust 引擎）
+    private var currentClient: AginxiumAdapter? = null
+
+    // 流式状态
+    private val _streamingText = MutableStateFlow("")
+    val streamingText: StateFlow<String> = _streamingText.asStateFlow()
+
+    private val _isStreaming = MutableStateFlow(false)
+    val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
+
+    // 权限请求
+    private val _pendingPermission = MutableStateFlow<RequestPermissionNotification?>(null)
+    val pendingPermission: StateFlow<RequestPermissionNotification?> = _pendingPermission.asStateFlow()
+
+    // 从服务端列表选中的对话（用于 ChatScreen 显示）
+    private val _selectedServerConversation = MutableStateFlow<ServerConversation?>(null)
+    val selectedServerConversation: StateFlow<ServerConversation?> = _selectedServerConversation.asStateFlow()
+
+    fun selectServerConversation(conversation: ServerConversation?) {
+        _selectedServerConversation.value = conversation
+    }
+
+    // 重连协程（确保只有一个）
+    private var reconnectJob: kotlinx.coroutines.Job? = null
 
     init {
         loadAginxList()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        reconnectJob?.cancel()
+        currentClient?.disconnect()
+        currentClient = null
+    }
+
+    private fun wireClientCallbacks(client: AginxiumAdapter) {
+        setupClientCallbacks(client)
+        // 取消旧的重连协程，确保只有一个
+        reconnectJob?.cancel()
+        reconnectJob = startAutoReconnect()
+    }
+
+    /**
+     * 自动重连（返回 Job 以便跟踪和取消）
+     */
+    private fun startAutoReconnect(): kotlinx.coroutines.Job {
+        return viewModelScope.launch {
+            var retryDelay = 2000L
+            val maxDelay = 30_000L
+            while (true) {
+                val client = currentClient ?: break
+                client.connectionState.first { it is ConnectionState.Error || it is ConnectionState.Disconnected }
+                if (_selectedAginx.value == null) break
+
+                Log.i(TAG, "Connection lost, auto-reconnecting in ${retryDelay}ms...")
+                _connectionState.value = ConnectionState.Connecting
+                delay(retryDelay)
+
+                try {
+                    val aginx = _selectedAginx.value ?: break
+                    client.disconnect()
+                    val newClient = AginxiumAdapter(viewModelScope)
+                    val connected = withContext(Dispatchers.IO) { newClient.connect(aginx.url) }
+                    if (connected) {
+                        setupClientCallbacks(newClient)
+                        currentClient = newClient
+                        retryDelay = 2000L
+                        _connectionState.value = ConnectionState.Connected
+                        val agents = withContext(Dispatchers.IO) { newClient.listAgents() }
+                        _agentList.value = agents ?: emptyList()
+                        Log.i(TAG, "Auto-reconnect succeeded")
+                    } else {
+                        retryDelay = (retryDelay * 2).coerceAtMost(maxDelay)
+                        _connectionState.value = ConnectionState.Error("重连失败，${retryDelay / 1000}秒后重试")
+                    }
+                } catch (e: Exception) {
+                    retryDelay = (retryDelay * 2).coerceAtMost(maxDelay)
+                    Log.e(TAG, "Auto-reconnect failed: ${e.message}")
+                    _connectionState.value = ConnectionState.Error("重连失败，${retryDelay / 1000}秒后重试")
+                }
+            }
+        }
+    }
+
+    private fun setupClientCallbacks(client: AginxiumAdapter) {
+        client.onSessionUpdate = { notification ->
+            viewModelScope.launch {
+                when (val update = notification.update) {
+                    is SessionUpdate.AgentMessageChunk -> {
+                        val text = (update.content as? MessageContent.Text)?.text ?: ""
+                        _streamingText.value += text
+                    }
+                    is SessionUpdate.ToolCall -> {}
+                    is SessionUpdate.ToolCallUpdate -> {}
+                    is SessionUpdate.AvailableCommandsUpdate -> {}
+                }
+            }
+        }
+        client.onPermissionRequest = { notification ->
+            viewModelScope.launch {
+                _pendingPermission.value = notification
+            }
+        }
     }
 
     private fun loadAginxList() {
@@ -65,15 +169,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addAginx(name: String, url: String, pairCode: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                val client = AgentClient()
-                val (host, port) = parseUrl(url) ?: run {
-                    withContext(Dispatchers.Main) { onError("无效的 URL 格式") }
-                    return@launch
-                }
-
-                val connected = withContext(Dispatchers.IO) { client.connect(host, port) }
+                val client = AginxiumAdapter(viewModelScope)
+                val connected = withContext(Dispatchers.IO) { client.connect(url) }
                 if (!connected) {
-                    withContext(Dispatchers.Main) { onError("连接失败") }
+                    onError("连接失败")
                     return@launch
                 }
 
@@ -81,7 +180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val bindResult = withContext(Dispatchers.IO) { client.bindDevice(pairCode, deviceName) }
 
                 if (bindResult == null || !bindResult.success) {
-                    withContext(Dispatchers.Main) { onError(bindResult?.error ?: "配对码无效或已过期") }
+                    onError(bindResult?.error ?: "配对码无效或已过期")
                     client.disconnect()
                     return@launch
                 }
@@ -97,14 +196,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
 
                 aginxDao.insert(entity)
+
+                wireClientCallbacks(client)
                 currentClient = client
 
                 val agents = withContext(Dispatchers.IO) { client.listAgents() }
                 _agentList.value = agents ?: emptyList()
 
-                withContext(Dispatchers.Main) { onSuccess() }
+                onSuccess()
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { onError("发生错误: ${e.message}") }
+                Log.e(TAG, "addAginx error: ${e.message}")
+                onError("发生错误: ${e.message}")
             }
         }
     }
@@ -112,18 +214,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun connectAginx(aginx: Aginx, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
         viewModelScope.launch {
             try {
-                val (host, port) = parseUrl(aginx.url) ?: run {
-                    withContext(Dispatchers.Main) { onError("无效的 URL 格式") }
-                    return@launch
-                }
-
                 _connectionState.value = ConnectionState.Connecting
 
-                val client = AgentClient()
-                val connected = withContext(Dispatchers.IO) { client.connect(host, port) }
+                val client = AginxiumAdapter(viewModelScope)
+                val connected = withContext(Dispatchers.IO) { client.connect(aginx.url) }
 
                 if (connected) {
                     currentClient?.disconnect()
+
+                    wireClientCallbacks(client)
                     currentClient = client
                     _selectedAginx.value = aginx
                     _connectionState.value = ConnectionState.Connected
@@ -131,14 +230,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val agents = withContext(Dispatchers.IO) { client.listAgents() }
                     _agentList.value = agents ?: emptyList()
 
-                    withContext(Dispatchers.Main) { onSuccess() }
+                    onSuccess()
                 } else {
                     _connectionState.value = ConnectionState.Error("连接失败")
-                    withContext(Dispatchers.Main) { onError("连接失败") }
+                    onError("连接失败")
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "connectAginx error: ${e.message}")
                 _connectionState.value = ConnectionState.Error(e.message ?: "连接错误")
-                withContext(Dispatchers.Main) { onError("发生错误: ${e.message}") }
+                onError("发生错误: ${e.message}")
             }
         }
     }
@@ -166,142 +266,98 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ========== Agent 发现和注册 ==========
+    // ========== 文件浏览 ==========
 
-    suspend fun discoverAgents(path: String? = null, maxDepth: Int = 5): DiscoverResult? {
-        if (currentClient == null || currentClient?.isConnected() != true) return null
-        return withContext(Dispatchers.IO) { currentClient?.discoverAgents(path, maxDepth) }
+    suspend fun listDirectory(path: String? = null): net.aginx.controller.client.DirectoryListing? {
+        val client = currentClient ?: return null
+        if (!client.isConnected()) return null
+        return withContext(Dispatchers.IO) { client.listDirectory(path) }
     }
 
-    suspend fun registerAgent(configPath: String): Boolean {
-        if (currentClient == null || currentClient?.isConnected() != true) return false
-        return withContext(Dispatchers.IO) {
-            val success = currentClient?.registerAgent(configPath) ?: false
-            if (success) {
-                val agents = currentClient?.listAgents()
-                _agentList.value = agents ?: emptyList()
-            }
-            success
-        }
+    suspend fun readFile(path: String): net.aginx.controller.client.FileContent? {
+        val client = currentClient ?: return null
+        if (!client.isConnected()) return null
+        return withContext(Dispatchers.IO) { client.readFile(path) }
     }
 
     // ========== 会话和消息 ==========
 
     suspend fun createSession(agentId: String, workdir: String? = null): String? {
-        if (currentClient == null || currentClient?.isConnected() != true) return null
+        val client = currentClient ?: return null
+        if (!client.isConnected()) return null
         return withContext(Dispatchers.IO) {
-            currentClient?.createSession(agentId, workdir)?.sessionId
+            client.createSession(agentId, workdir)?.sessionId
+        }
+    }
+
+    suspend fun loadSession(sessionId: String): String? {
+        val client = currentClient ?: return null
+        if (!client.isConnected()) return null
+        return withContext(Dispatchers.IO) {
+            client.loadSession(sessionId)?.sessionId
         }
     }
 
     fun sendMessageWithSession(sessionId: String, message: String, onResponse: (SendMessageResult?) -> Unit) {
-        if (currentClient == null || currentClient?.isConnected() != true) {
+        val client = currentClient
+        if (client == null || !client.isConnected()) {
             onResponse(null)
             return
         }
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                currentClient?.sendMessageSession(sessionId, message, onResponse)
+
+        _streamingText.value = ""
+        _isStreaming.value = true
+
+        client.sendMessageSession(sessionId, message) { result ->
+            viewModelScope.launch {
+                val finalText = _streamingText.value
+                _isStreaming.value = false
+                _streamingText.value = ""
+                if (finalText.isNotBlank() && result is SendMessageResult.Response) {
+                    onResponse(SendMessageResult.Response(finalText))
+                } else {
+                    onResponse(result)
+                }
             }
         }
     }
 
-    fun respondPermission(sessionId: String, choice: Int, onResponse: (SendMessageResult?) -> Unit) {
-        if (currentClient == null || currentClient?.isConnected() != true) {
-            onResponse(null)
-            return
-        }
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                currentClient?.respondPermission(sessionId, choice, onResponse)
-            }
+    fun clearPendingPermission() {
+        _pendingPermission.value = null
+    }
+
+    suspend fun sendPermissionResponse(sessionId: String, optionId: String?) {
+        val client = currentClient ?: return
+        if (!client.isConnected()) return
+        withContext(Dispatchers.IO) {
+            client.sendPermissionResponse(sessionId, optionId)
         }
     }
 
     suspend fun closeSession(sessionId: String): Boolean {
-        if (currentClient == null || currentClient?.isConnected() != true) return false
-        return withContext(Dispatchers.IO) { currentClient?.closeSession(sessionId) ?: false }
+        val client = currentClient ?: return false
+        if (!client.isConnected()) return false
+        return withContext(Dispatchers.IO) { client.closeSession(sessionId) ?: false }
     }
 
     // ========== 对话管理 ==========
 
-    fun getConversationsForAgent(aginxId: String, agentId: String): Flow<List<ConversationEntity>> {
-        return conversationDao.getByAgent(aginxId, agentId)
+    suspend fun listConversations(agentId: String): List<net.aginx.controller.client.ServerConversation>? {
+        val client = currentClient ?: return null
+        if (!client.isConnected()) return null
+        return withContext(Dispatchers.IO) { client.listConversations(agentId) }
     }
 
-    suspend fun getConversationCount(aginxId: String, agentId: String): Int {
-        return conversationDao.countByAgent(aginxId, agentId)
+    suspend fun deleteServerConversation(sessionId: String, agentId: String): Boolean {
+        val client = currentClient ?: return false
+        if (!client.isConnected()) return false
+        return withContext(Dispatchers.IO) { client.deleteConversation(sessionId, agentId) ?: false }
     }
 
-    suspend fun createConversation(aginxId: String, agentId: String, workdir: String?): ConversationEntity {
-        val now = System.currentTimeMillis()
-        val id = UUID.randomUUID().toString()
-        val conversation = ConversationEntity(
-            id = id,
-            aginxId = aginxId,
-            agentId = agentId,
-            workdir = workdir,
-            title = null,
-            sessionId = null,
-            createdAt = now,
-            updatedAt = now,
-            lastMessage = null,
-            lastMessageTime = null
-        )
-        conversationDao.insert(conversation)
-        return conversation
-    }
-
-    suspend fun getConversation(aginxId: String, conversationId: String): ConversationEntity? {
-        return conversationDao.getById(conversationId, aginxId)
-    }
-
-    fun updateConversationSessionId(aginxId: String, conversationId: String, sessionId: String) {
-        viewModelScope.launch { conversationDao.updateSessionId(conversationId, aginxId, sessionId) }
-    }
-
-    fun updateConversationLastMessage(aginxId: String, conversationId: String, message: String) {
-        viewModelScope.launch {
-            val now = System.currentTimeMillis()
-            conversationDao.updateLastMessage(conversationId, aginxId, message, now)
-        }
-    }
-
-    fun updateConversationWorkdir(aginxId: String, conversationId: String, workdir: String?) {
-        viewModelScope.launch { conversationDao.updateWorkdir(conversationId, aginxId, workdir) }
-    }
-
-    suspend fun deleteConversation(aginxId: String, conversationId: String) {
-        conversationDao.deleteById(conversationId, aginxId)
-        messageDao.deleteByConversation(conversationId)
-    }
-
-    // ========== 消息管理 ==========
-
-    fun getMessagesForConversation(conversationId: String): Flow<List<MessageEntity>> {
-        return messageDao.getByConversation(conversationId)
-    }
-
-    suspend fun saveMessage(
-        conversationId: String,
-        content: String,
-        isFromUser: Boolean,
-        senderName: String?,
-        aginxId: String
-    ) {
-        val now = System.currentTimeMillis()
-        val message = MessageEntity(
-            id = "${conversationId}-${now}-${UUID.randomUUID()}",
-            conversationId = conversationId,
-            senderId = if (isFromUser) "user" else "agent",
-            senderName = senderName,
-            senderAvatar = null,
-            content = content,
-            timestamp = now,
-            isFromUser = isFromUser
-        )
-        messageDao.insert(message)
-        updateConversationLastMessage(aginxId, conversationId, content)
+    suspend fun getConversationMessages(sessionId: String, limit: Int = 10): List<net.aginx.controller.client.ConversationMessage>? {
+        val client = currentClient ?: return null
+        if (!client.isConnected()) return null
+        return withContext(Dispatchers.IO) { client.getConversationMessages(sessionId, limit) }
     }
 
     // ========== Agent 工作目录 ==========
@@ -310,20 +366,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return agentDao.getById(agentId, aginxId)?.workdir
     }
 
-    fun saveAgentWorkdir(aginxId: String, agentId: String, workdir: String?) {
-        viewModelScope.launch {
-            agentDao.updateWorkdir(agentId, aginxId, workdir)
+    suspend fun saveAgentWorkdir(aginxId: String, agentId: String, workdir: String?) {
+        withContext(Dispatchers.IO) {
+            val existing = agentDao.getById(agentId, aginxId)
+            if (existing == null) {
+                val agentInfo = _agentList.value.find { it.id == agentId }
+                if (agentInfo != null) {
+                    agentDao.insert(AgentEntity(
+                        id = agentInfo.id,
+                        numericId = agentInfo.numericId ?: 0L,
+                        localId = agentInfo.id,
+                        aginxId = aginxId,
+                        nickname = agentInfo.name,
+                        avatar = agentInfo.avatar,
+                        description = agentInfo.description,
+                        personality = null,
+                        capabilities = agentInfo.capabilities.joinToString(","),
+                        workdir = workdir
+                    ))
+                } else {
+                    agentDao.updateWorkdir(agentId, aginxId, workdir)
+                }
+            } else {
+                agentDao.updateWorkdir(agentId, aginxId, workdir)
+            }
         }
-    }
-
-    // ========== 工具方法 ==========
-
-    private fun parseUrl(url: String): Pair<String, Int>? {
-        val stripped = url.removePrefix("agent://")
-        val parts = stripped.split(":")
-        val host = parts.getOrNull(0) ?: return null
-        val port = parts.getOrNull(1)?.toIntOrNull() ?: 86
-        return Pair(host, port)
     }
 }
 

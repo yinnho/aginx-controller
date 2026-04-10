@@ -28,30 +28,3 @@ data class AgentEntity(
     val capabilities: String,
     val workdir: String? = null
 )
-
-@Entity(tableName = "messages")
-data class MessageEntity(
-    @PrimaryKey
-    val id: String,
-    val conversationId: String,
-    val senderId: String?,
-    val senderName: String?,
-    val senderAvatar: String?,
-    val content: String,
-    val timestamp: Long,
-    val isFromUser: Boolean
-)
-
-@Entity(tableName = "conversations", primaryKeys = ["id", "aginxId"])
-data class ConversationEntity(
-    val id: String,
-    val aginxId: String,
-    val agentId: String,
-    val workdir: String?,
-    val title: String?,
-    val sessionId: String?,
-    val createdAt: Long,
-    val updatedAt: Long,
-    val lastMessage: String?,
-    val lastMessageTime: Long?
-)

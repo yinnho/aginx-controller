@@ -1,7 +1,10 @@
 package net.aginx.controller.ui.chat
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,12 +23,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -90,15 +99,17 @@ fun ChatMarkdown(text: String, textColor: Color) {
     val codeColor = MaterialTheme.colorScheme.onSurfaceVariant
     val linkColor = MaterialTheme.colorScheme.primary
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        RenderMarkdownBlocks(
-            start = document.firstChild,
-            textColor = textColor,
-            listDepth = 0,
-            codeBg = codeBg,
-            codeColor = codeColor,
-            linkColor = linkColor,
-        )
+    SelectionContainer {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            RenderMarkdownBlocks(
+                start = document.firstChild,
+                textColor = textColor,
+                listDepth = 0,
+                codeBg = codeBg,
+                codeColor = codeColor,
+                linkColor = linkColor,
+            )
+        }
     }
 }
 
@@ -135,17 +146,13 @@ private fun RenderMarkdownBlocks(
                 )
             }
             is FencedCodeBlock -> {
-                SelectionContainer(modifier = Modifier.fillMaxWidth()) {
-                    ChatCodeBlock(
-                        code = current.literal.orEmpty(),
-                        language = current.info?.trim()?.ifEmpty { null }
-                    )
-                }
+                ChatCodeBlock(
+                    code = current.literal.orEmpty(),
+                    language = current.info?.trim()?.ifEmpty { null }
+                )
             }
             is IndentedCodeBlock -> {
-                SelectionContainer(modifier = Modifier.fillMaxWidth()) {
-                    ChatCodeBlock(code = current.literal.orEmpty(), language = null)
-                }
+                ChatCodeBlock(code = current.literal.orEmpty(), language = null)
             }
             is BlockQuote -> {
                 Row(
@@ -244,10 +251,29 @@ private fun RenderParagraph(
         return
     }
 
+    val context = LocalContext.current
+    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+
     Text(
         text = annotated,
         style = MaterialTheme.typography.bodyMedium,
         color = textColor,
+        onTextLayout = { layoutResult = it },
+        modifier = Modifier.pointerInput(annotated) {
+            detectTapGestures { offset ->
+                layoutResult?.let { layout ->
+                    val position = layout.getOffsetForPosition(offset)
+                    annotated.getStringAnnotations(position, position)
+                        .firstOrNull()
+                        ?.let { annotation ->
+                            if (annotation.tag == "URL") {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(annotation.item))
+                                context.startActivity(intent)
+                            }
+                        }
+                }
+            }
+        }
     )
 }
 
@@ -509,6 +535,8 @@ private fun AnnotatedString.Builder.appendInlineNode(
                 }
             }
             is Link -> {
+                val url = n.destination ?: ""
+                pushStringAnnotation(tag = "URL", annotation = url)
                 withStyle(
                     SpanStyle(
                         color = linkColor,
@@ -517,6 +545,7 @@ private fun AnnotatedString.Builder.appendInlineNode(
                 ) {
                     appendInlineNode(n.firstChild, codeBg, codeColor, linkColor)
                 }
+                pop()
             }
             is HtmlInline -> {
                 if (!n.literal.isNullOrBlank()) {

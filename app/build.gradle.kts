@@ -56,6 +56,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.8.1")
@@ -68,8 +69,10 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.0")
 
     // Network
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
+
+    // JNA (required by UniFFI generated bindings)
+    implementation("net.java.dev.jna:jna:5.14.0@aar")
 
     // Markdown
     implementation("org.commonmark:commonmark:0.27.1")

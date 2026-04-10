@@ -149,8 +149,9 @@ fun AddAginxScreen(
                     )
                     Text(
                         text = "1. 在服务器上运行 aginx pair\n" +
-                                "2. 复制显示的配对码\n" +
-                                "3. 在此输入配对码完成绑定",
+                                "2. 复制显示的配对码和服务器地址\n" +
+                                "3. 服务器地址填写到上方输入框\n" +
+                                "4. 在此输入配对码完成绑定",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
