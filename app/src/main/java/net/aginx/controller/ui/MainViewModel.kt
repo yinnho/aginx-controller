@@ -115,7 +115,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val aginx = _selectedAginx.value ?: break
                     client.disconnect()
                     val newClient = AginxiumAdapter(viewModelScope)
-                    val connected = withContext(Dispatchers.IO) { newClient.connect(aginx.url) }
+                    val token = aginx.token ?: ""
+                    val connected = withContext(Dispatchers.IO) { newClient.connect(aginx.url, token) }
                     if (connected) {
                         setupClientCallbacks(newClient)
                         currentClient = newClient
@@ -217,7 +218,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _connectionState.value = ConnectionState.Connecting
 
                 val client = AginxiumAdapter(viewModelScope)
-                val connected = withContext(Dispatchers.IO) { client.connect(aginx.url) }
+                val token = aginx.token ?: ""
+                val connected = withContext(Dispatchers.IO) { client.connect(aginx.url, token) }
 
                 if (connected) {
                     currentClient?.disconnect()

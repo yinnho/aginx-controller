@@ -46,11 +46,12 @@ class AginxiumAdapter(private val scope: CoroutineScope) {
     /**
      * 连接到 aginx
      * @param url 格式: agent://host:port 或 agent://id.relay.yinnho.cn
+     * @param authToken 绑定设备时获得的 token，首次绑定传空字符串
      */
-    suspend fun connect(url: String): Boolean {
+    suspend fun connect(url: String, authToken: String = ""): Boolean {
         _connectionState.value = ConnectionState.Connecting
         return try {
-            val client = FfiAginxClient.connect(url)
+            val client = FfiAginxClient.connect(url, authToken)
             ffiClient = client
 
             // 设置事件监听器
@@ -107,8 +108,8 @@ class AginxiumAdapter(private val scope: CoroutineScope) {
 
     suspend fun bindDevice(pairCode: String, deviceName: String): BindResult? {
         return try {
-            ffiClient?.bindDevice(pairCode, deviceName)
-            BindResult(success = true)
+            val token = ffiClient?.bindDevice(pairCode, deviceName) ?: return BindResult(error = "绑定失败")
+            BindResult(success = true, token = token)
         } catch (e: Exception) {
             val msg = e.message ?: ""
             if (msg.contains("Already bound", ignoreCase = true)) {
