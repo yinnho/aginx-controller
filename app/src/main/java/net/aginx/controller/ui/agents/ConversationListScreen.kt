@@ -29,7 +29,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.aginx.controller.client.ServerConversation
 import net.aginx.controller.ui.MainViewModel
-import net.aginx.controller.ui.common.DirectoryBrowser
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -41,7 +40,6 @@ fun ConversationListScreen(
     viewModel: MainViewModel,
     onBack: () -> Unit,
     onSelectConversation: (sessionId: String) -> Unit,
-    onCreateNewConversation: () -> Unit
 ) {
     var conversations by remember { mutableStateOf<List<ServerConversation>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -52,7 +50,6 @@ fun ConversationListScreen(
     }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
-    var showWorkdirDialog by remember { mutableStateOf(false) }
 
     // 是否首次加载（避免 LaunchedEffect 和 ON_RESUME 重复请求）
     var initialLoadDone by remember { mutableStateOf(false) }
@@ -134,23 +131,12 @@ fun ConversationListScreen(
                     IconButton(onClick = { refresh() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "刷新")
                     }
-                    IconButton(onClick = { showWorkdirDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "新对话")
-                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showWorkdirDialog = true },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "新对话")
-            }
         }
     ) { padding ->
         when {
@@ -184,8 +170,7 @@ fun ConversationListScreen(
                 EmptyConversationsState(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(padding),
-                    onCreateNew = { showWorkdirDialog = true }
+                        .padding(padding)
                 )
             }
             else -> {
@@ -217,23 +202,6 @@ fun ConversationListScreen(
                 }
             }
         }
-    }
-
-    // 新对话：先选择工作目录
-    if (showWorkdirDialog) {
-        DirectoryBrowser(
-            viewModel = viewModel,
-            onSelectDirectory = { path ->
-                scope.launch {
-                    viewModel.saveAgentWorkdir(aginxId, agentId, path)
-                    showWorkdirDialog = false
-                    onCreateNewConversation()
-                }
-            },
-            onDismiss = {
-                showWorkdirDialog = false
-            }
-        )
     }
 }
 
@@ -393,7 +361,6 @@ private fun SwipeableConversationItem(
 @Composable
 private fun EmptyConversationsState(
     modifier: Modifier = Modifier,
-    onCreateNew: () -> Unit
 ) {
     Column(
         modifier = modifier,
@@ -412,18 +379,6 @@ private fun EmptyConversationsState(
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "点击下方按钮开始新对话",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = onCreateNew) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("开始对话")
-        }
     }
 }
 

@@ -92,28 +92,6 @@ data class ConversationMessage(
     val content: String
 )
 
-// ========== 文件浏览 ==========
-
-data class DirectoryListing(
-    val path: String,
-    val entries: List<FileEntry>
-)
-
-data class FileEntry(
-    val name: String,
-    val type: String,       // "directory" or "file"
-    val size: Long?,
-    val modified: Long?,
-    val isHidden: Boolean = false
-)
-
-data class FileContent(
-    val name: String,
-    val size: Long,
-    val content: String,    // base64 encoded
-    val mimeType: String?
-)
-
 // ========== 权限 ==========
 
 sealed class PermissionResponseResult {

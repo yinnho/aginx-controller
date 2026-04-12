@@ -14,17 +14,3 @@ data class AginxEntity(
     val isOnline: Boolean = false,
     val isFavorite: Boolean = false
 )
-
-@Entity(tableName = "agents", primaryKeys = ["id", "aginxId"])
-data class AgentEntity(
-    val id: String,
-    val numericId: Long,
-    val localId: String,
-    val aginxId: String,
-    val nickname: String,
-    val avatar: String?,
-    val description: String?,
-    val personality: String?,
-    val capabilities: String,
-    val workdir: String? = null
-)

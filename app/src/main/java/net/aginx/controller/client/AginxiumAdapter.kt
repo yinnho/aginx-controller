@@ -123,9 +123,9 @@ class AginxiumAdapter(private val scope: CoroutineScope) {
 
     // ========== 会话 ==========
 
-    suspend fun loadSession(sessionId: String): SessionResult? {
+    suspend fun loadSession(sessionId: String, agentId: String? = null): SessionResult? {
         return try {
-            ffiClient?.loadSession(sessionId)
+            ffiClient?.loadSession(sessionId, agentId ?: "")
             SessionResult(success = true, sessionId = sessionId)
         } catch (e: Exception) {
             Log.e(TAG, "loadSession error: ${e.message}")
@@ -167,25 +167,21 @@ class AginxiumAdapter(private val scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
             try {
                 client.prompt(sessionId, message)
-
-                // prompt 返回 = 流式结束
+                // prompt 返回 = 服务器已接受请求，流式响应通过事件接收
+            } catch (e: Exception) {
+                Log.e(TAG, "sendMessageSession prompt error: ${e.message}")
+                // 只在 prompt 发送失败时回调（如连接断开）
                 val callback = synchronized(streamingLock) {
                     if (streamingSessionId == sessionId) {
                         streamingSessionId = null
                         streamingCallback
                     } else null
                 }
-                // 在锁外调用回调，避免死锁
-                callback?.invoke(SendMessageResult.Response(""))
-            } catch (e: Exception) {
-                Log.e(TAG, "sendMessageSession prompt error: ${e.message}")
-                synchronized(streamingLock) {
-                    streamingSessionId = null
-                    streamingCallback = null
-                }
-                onResponse(SendMessageResult.Response("发送失败: ${e.message}"))
+                callback?.invoke(SendMessageResult.Response("发送失败: ${e.message}"))
             }
         }
+
+        // Done 事件由 Rust 引擎通过 emit_streaming_final 发出，经事件监听器回调到 handleSessionEvent
     }
 
     suspend fun closeSession(sessionId: String): Boolean {
@@ -238,11 +234,11 @@ class AginxiumAdapter(private val scope: CoroutineScope) {
         }
     }
 
-    suspend fun getConversationMessages(sessionId: String, limit: Int = 10): List<ConversationMessage>? {
+    suspend fun getConversationMessages(sessionId: String, agentId: String, limit: Int = 10): List<ConversationMessage>? {
         return try {
             val result = ffiClient?.rawRequest(
                 "getConversationMessages",
-                gson.toJson(mapOf("sessionId" to sessionId, "limit" to limit))
+                gson.toJson(mapOf("sessionId" to sessionId, "agentId" to agentId, "limit" to limit))
             ) ?: return null
             val map = gson.fromJson(result, Map::class.java) as Map<*, *>
             val messagesList = map["messages"] as? List<*> ?: return null
@@ -255,28 +251,6 @@ class AginxiumAdapter(private val scope: CoroutineScope) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "getConversationMessages error: ${e.message}")
-            null
-        }
-    }
-
-    // ========== 文件浏览 ==========
-
-    suspend fun listDirectory(path: String? = null): DirectoryListing? {
-        return try {
-            val json = ffiClient?.listDirectory(path ?: "") ?: return null
-            parseDirectoryJson(json)
-        } catch (e: Exception) {
-            Log.e(TAG, "listDirectory error: ${e.message}")
-            null
-        }
-    }
-
-    suspend fun readFile(path: String): FileContent? {
-        return try {
-            val json = ffiClient?.readFile(path) ?: return null
-            parseFileContentJson(json)
-        } catch (e: Exception) {
-            Log.e(TAG, "readFile error: ${e.message}")
             null
         }
     }
@@ -351,6 +325,7 @@ class AginxiumAdapter(private val scope: CoroutineScope) {
                     )
                 }
                 "Done" -> {
+                    Log.d(TAG, "handleSessionEvent: Done for session=$sessionId")
                     val callback = synchronized(streamingLock) {
                         if (streamingSessionId == sessionId) {
                             streamingSessionId = null
@@ -421,42 +396,6 @@ class AginxiumAdapter(private val scope: CoroutineScope) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "parseConversationsJson error: ${e.message}")
-            null
-        }
-    }
-
-    private fun parseDirectoryJson(json: String): DirectoryListing? {
-        return try {
-            val list = gson.fromJson(json, List::class.java) as List<*>
-            val entries = list.mapNotNull { item ->
-                (item as? Map<*, *>)?.let { map ->
-                    FileEntry(
-                        name = map["name"] as? String ?: return@let null,
-                        type = map["type"] as? String ?: "file",
-                        size = (map["size"] as? Number)?.toLong(),
-                        modified = (map["modified"] as? Number)?.toLong(),
-                        isHidden = map["isHidden"] as? Boolean ?: false
-                    )
-                }
-            }
-            DirectoryListing(path = "", entries = entries)
-        } catch (e: Exception) {
-            Log.e(TAG, "parseDirectoryJson error: ${e.message}")
-            null
-        }
-    }
-
-    private fun parseFileContentJson(json: String): FileContent? {
-        return try {
-            val map = gson.fromJson(json, Map::class.java) as Map<*, *>
-            FileContent(
-                name = map["name"] as? String ?: "unknown",
-                size = (map["size"] as? Number)?.toLong() ?: 0L,
-                content = map["content"] as? String ?: "",
-                mimeType = map["mimeType"] as? String
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "parseFileContentJson error: ${e.message}")
             null
         }
     }

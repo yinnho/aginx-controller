@@ -2,7 +2,7 @@ package net.aginx.controller.db.dao
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
-import net.aginx.controller.db.entities.*
+import net.aginx.controller.db.entities.AginxEntity
 
 @Dao
 interface AginxDao {
@@ -23,25 +23,4 @@ interface AginxDao {
 
     @Query("DELETE FROM aginx WHERE id = :id")
     suspend fun deleteById(id: String)
-}
-
-@Dao
-interface AgentDao {
-    @Query("SELECT * FROM agents WHERE aginxId = :aginxId")
-    fun getByAginx(aginxId: String): Flow<List<AgentEntity>>
-
-    @Query("SELECT * FROM agents WHERE id = :id AND aginxId = :aginxId")
-    suspend fun getById(id: String, aginxId: String): AgentEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(agent: AgentEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(agents: List<AgentEntity>)
-
-    @Query("UPDATE agents SET workdir = :workdir WHERE id = :id AND aginxId = :aginxId")
-    suspend fun updateWorkdir(id: String, aginxId: String, workdir: String?)
-
-    @Query("DELETE FROM agents WHERE aginxId = :aginxId")
-    suspend fun deleteByAginx(aginxId: String)
 }

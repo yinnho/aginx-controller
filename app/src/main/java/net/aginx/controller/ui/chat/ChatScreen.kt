@@ -31,8 +31,6 @@ import net.aginx.controller.client.ConversationMessage
 import net.aginx.controller.client.SendMessageResult
 import net.aginx.controller.data.model.RequestPermissionNotification
 import net.aginx.controller.ui.MainViewModel
-import net.aginx.controller.ui.common.DirectoryBrowser
-import net.aginx.controller.ui.common.FileBrowser
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
@@ -42,7 +40,6 @@ fun ChatScreen(
     conversationId: String?,
     viewModel: MainViewModel,
     onBack: () -> Unit,
-    onNewConversation: () -> Unit = {}
 ) {
     var inputText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
@@ -70,12 +67,6 @@ fun ChatScreen(
         agentList.find { it.id == agentId }
     }
 
-    // 工作目录
-    var workdir by remember { mutableStateOf("") }
-    var workdirLoaded by remember { mutableStateOf(false) }
-    var showWorkdirDialog by remember { mutableStateOf(false) }
-    var showFileBrowser by remember { mutableStateOf(false) }
-
     // 服务端对话信息（从对话列表点进来时有值）
     val serverConversation by viewModel.selectedServerConversation.collectAsState()
     val isServerConversation = conversationId != null && serverConversation?.sessionId == conversationId
@@ -83,18 +74,10 @@ fun ChatScreen(
     // 从服务端拉取消息
     suspend fun refreshMessages() {
         val sid = serverSessionId ?: return
-        val messages = viewModel.getConversationMessages(sid, 10)
+        val messages = viewModel.getConversationMessages(sid, agentId, 10)
         if (messages != null) {
             serverMessages = messages
             Log.d("ChatScreen", "Refreshed ${messages.size} messages from server")
-        }
-    }
-
-    // 创建服务器会话（新对话）
-    suspend fun initServerSession() {
-        if (serverSessionId == null) {
-            serverSessionId = viewModel.createSession(agentId, workdir.takeIf { it.isNotBlank() })
-            Log.d("ChatScreen", "Created server session: $serverSessionId")
         }
     }
 
@@ -123,18 +106,24 @@ fun ChatScreen(
                 isLoading = false
             }
             is SendMessageResult.SessionNotFound -> {
-                Log.w("ChatScreen", "Session not found, recreating session...")
-                serverSessionId = null
-                scope.launch {
-                    initServerSession()
-                    val newSid = serverSessionId
-                    if (newSid != null && retryMessage != null) {
-                        viewModel.sendMessageWithSession(newSid, retryMessage) { retryResult ->
-                            handleSendMessageResult(retryResult, null)
+                Log.w("ChatScreen", "Session not found, reloading...")
+                val sid = serverSessionId
+                if (sid != null && retryMessage != null) {
+                    scope.launch {
+                        val loadedSid = viewModel.loadSession(sid, agentId)
+                        if (loadedSid != null) {
+                            serverSessionId = loadedSid
+                            viewModel.sendMessageWithSession(loadedSid, retryMessage) { retryResult ->
+                                viewModel.viewModelScope.launch {
+                                    handleSendMessageResult(retryResult, null)
+                                }
+                            }
+                        } else {
+                            isLoading = false
                         }
-                    } else {
-                        isLoading = false
                     }
+                } else {
+                    isLoading = false
                 }
             }
             null -> {
@@ -147,34 +136,16 @@ fun ChatScreen(
     // 初始化
     LaunchedEffect(conversationId) {
         if (conversationId != null) {
-            // 从对话列表进入 — conversationId 就是 Claude session ID
+            // 从对话列表进入 — conversationId 就是 session ID
             serverSessionId = conversationId
-            workdir = serverConversation?.workdir ?: ""
-            workdirLoaded = true
 
             // 恢复会话 + 加载最近消息
             Log.d("ChatScreen", "Loading server conversation: $conversationId")
-            val loadedSid = viewModel.loadSession(conversationId)
+            val loadedSid = viewModel.loadSession(conversationId, agentId)
             if (loadedSid != null) {
                 serverSessionId = loadedSid
             }
             refreshMessages()
-        } else {
-            // 新对话
-            val savedWorkdir = viewModel.getAgentWorkdir(aginxId, agentId)
-            workdir = savedWorkdir ?: agentInfo?.workingDir ?: ""
-            workdirLoaded = true
-
-            if (agentInfo?.requireWorkdir == true && workdir.isBlank()) {
-                showWorkdirDialog = true
-            }
-        }
-    }
-
-    // 新对话：当工作目录就绪后创建服务端会话
-    LaunchedEffect(workdir, workdirLoaded) {
-        if (workdirLoaded && workdir.isNotBlank() && serverSessionId == null && conversationId == null) {
-            initServerSession()
         }
     }
 
@@ -184,30 +155,6 @@ fun ChatScreen(
         if (totalItems > 0) {
             listState.scrollToItem(totalItems - 1)
         }
-    }
-
-    // 工作目录选择对话框
-    if (showWorkdirDialog) {
-        DirectoryBrowser(
-            viewModel = viewModel,
-            onSelectDirectory = { newWorkdir ->
-                workdir = newWorkdir
-                showWorkdirDialog = false
-                scope.launch {
-                    viewModel.saveAgentWorkdir(aginxId, agentId, newWorkdir.takeIf { it.isNotBlank() })
-                }
-            },
-            onDismiss = { showWorkdirDialog = false }
-        )
-    }
-
-    // 文件浏览对话框
-    if (showFileBrowser) {
-        FileBrowser(
-            viewModel = viewModel,
-            initialPath = workdir.takeIf { it.isNotBlank() },
-            onDismiss = { showFileBrowser = false }
-        )
     }
 
     // 权限提示对话框
@@ -235,31 +182,12 @@ fun ChatScreen(
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
                                 maxLines = 1
                             )
-                        } else if (workdir.isNotBlank()) {
-                            Text(
-                                "目录: $workdir",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                                maxLines = 1
-                            )
-                        } else {
-                            Text(
-                                if (serverMessages.isEmpty()) "新对话" else "${serverMessages.size} 条消息",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
                         }
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    // 文件浏览按钮
-                    IconButton(onClick = { showFileBrowser = true }) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "文件浏览")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -378,12 +306,6 @@ fun ChatScreen(
                 onSend = {
                     Log.d("ChatScreen", "onSend: inputText.len=${inputText.length}, isLoading=$isLoading, serverSessionId=$serverSessionId")
                     if (inputText.isNotBlank() && !isLoading) {
-                        // 检查是否需要工作目录
-                        if (agentInfo?.requireWorkdir == true && workdir.isBlank()) {
-                            showWorkdirDialog = true
-                            return@InputBar
-                        }
-
                         val messageToSend = inputText
                         inputText = ""
                         isLoading = true
@@ -400,20 +322,7 @@ fun ChatScreen(
                                 }
                             }
                         } else {
-                            // 先创建服务器会话
-                            scope.launch {
-                                initServerSession()
-                                val newSid = serverSessionId
-                                if (newSid != null) {
-                                    viewModel.sendMessageWithSession(newSid, messageToSend) { result ->
-                                        viewModel.viewModelScope.launch {
-                                            handleSendMessageResult(result, messageToSend)
-                                        }
-                                    }
-                                } else {
-                                    isLoading = false
-                                }
-                            }
+                            isLoading = false
                         }
                     }
                 },

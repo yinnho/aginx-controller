@@ -766,10 +766,6 @@ internal open class UniffiVTableCallbackInterfaceFfiEventListener(
 
 
 
-
-
-
-
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -794,7 +790,7 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_aginxium_fn_free_ffiaginxclient(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    fun uniffi_aginxium_fn_constructor_ffiaginxclient_connect(`url`: RustBuffer.ByValue,
+    fun uniffi_aginxium_fn_constructor_ffiaginxclient_connect(`url`: RustBuffer.ByValue,`authToken`: RustBuffer.ByValue,
     ): Long
     fun uniffi_aginxium_fn_method_ffiaginxclient_bind_device(`ptr`: Pointer,`pairCode`: RustBuffer.ByValue,`deviceName`: RustBuffer.ByValue,
     ): Long
@@ -808,15 +804,11 @@ internal interface UniffiLib : Library {
     ): Long
     fun uniffi_aginxium_fn_method_ffiaginxclient_list_conversations(`ptr`: Pointer,`agentId`: RustBuffer.ByValue,
     ): Long
-    fun uniffi_aginxium_fn_method_ffiaginxclient_list_directory(`ptr`: Pointer,`path`: RustBuffer.ByValue,
-    ): Long
-    fun uniffi_aginxium_fn_method_ffiaginxclient_load_session(`ptr`: Pointer,`sessionId`: RustBuffer.ByValue,
+    fun uniffi_aginxium_fn_method_ffiaginxclient_load_session(`ptr`: Pointer,`sessionId`: RustBuffer.ByValue,`agentId`: RustBuffer.ByValue,
     ): Long
     fun uniffi_aginxium_fn_method_ffiaginxclient_prompt(`ptr`: Pointer,`sessionId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,
     ): Long
     fun uniffi_aginxium_fn_method_ffiaginxclient_raw_request(`ptr`: Pointer,`method`: RustBuffer.ByValue,`paramsJson`: RustBuffer.ByValue,
-    ): Long
-    fun uniffi_aginxium_fn_method_ffiaginxclient_read_file(`ptr`: Pointer,`path`: RustBuffer.ByValue,
     ): Long
     fun uniffi_aginxium_fn_method_ffiaginxclient_respond_permission(`ptr`: Pointer,`requestId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,
     ): Long
@@ -948,15 +940,11 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_aginxium_checksum_method_ffiaginxclient_list_conversations(
     ): Short
-    fun uniffi_aginxium_checksum_method_ffiaginxclient_list_directory(
-    ): Short
     fun uniffi_aginxium_checksum_method_ffiaginxclient_load_session(
     ): Short
     fun uniffi_aginxium_checksum_method_ffiaginxclient_prompt(
     ): Short
     fun uniffi_aginxium_checksum_method_ffiaginxclient_raw_request(
-    ): Short
-    fun uniffi_aginxium_checksum_method_ffiaginxclient_read_file(
     ): Short
     fun uniffi_aginxium_checksum_method_ffiaginxclient_respond_permission(
     ): Short
@@ -983,7 +971,7 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
-    if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_bind_device() != 64656.toShort()) {
+    if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_bind_device() != 23626.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_cancel_session() != 48072.toShort()) {
@@ -1001,10 +989,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_list_conversations() != 44188.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_list_directory() != 30384.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_load_session() != 13019.toShort()) {
+    if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_load_session() != 28043.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_prompt() != 28574.toShort()) {
@@ -1013,16 +998,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_raw_request() != 30819.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_read_file() != 35209.toShort()) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
     if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_respond_permission() != 40050.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aginxium_checksum_method_ffiaginxclient_set_event_listener() != 2858.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_aginxium_checksum_constructor_ffiaginxclient_connect() != 8934.toShort()) {
+    if (lib.uniffi_aginxium_checksum_constructor_ffiaginxclient_connect() != 60252.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_aginxium_checksum_method_ffieventlistener_on_event() != 33948.toShort()) {
@@ -1340,9 +1322,9 @@ private class JavaLangRefCleanable(
 public interface FfiAginxClientInterface {
     
     /**
-     * 绑定设备
+     * 绑定设备，返回 token（用于后续连接认证）
      */
-    suspend fun `bindDevice`(`pairCode`: kotlin.String, `deviceName`: kotlin.String)
+    suspend fun `bindDevice`(`pairCode`: kotlin.String, `deviceName`: kotlin.String): kotlin.String
     
     /**
      * 取消会话
@@ -1370,14 +1352,9 @@ public interface FfiAginxClientInterface {
     suspend fun `listConversations`(`agentId`: kotlin.String): kotlin.String
     
     /**
-     * 列出目录（返回 JSON 字符串）
-     */
-    suspend fun `listDirectory`(`path`: kotlin.String): kotlin.String
-    
-    /**
      * 加载已有会话
      */
-    suspend fun `loadSession`(`sessionId`: kotlin.String)
+    suspend fun `loadSession`(`sessionId`: kotlin.String, `agentId`: kotlin.String)
     
     /**
      * 发送 prompt（流式响应通过事件监听器回调）
@@ -1388,11 +1365,6 @@ public interface FfiAginxClientInterface {
      * 通用 JSON-RPC 请求，返回 JSON 字符串
      */
     suspend fun `rawRequest`(`method`: kotlin.String, `paramsJson`: kotlin.String?): kotlin.String
-    
-    /**
-     * 读取文件（返回 JSON 字符串）
-     */
-    suspend fun `readFile`(`path`: kotlin.String): kotlin.String
     
     /**
      * 回复权限请求
@@ -1493,11 +1465,11 @@ open class FfiAginxClient: Disposable, AutoCloseable, FfiAginxClientInterface {
 
     
     /**
-     * 绑定设备
+     * 绑定设备，返回 token（用于后续连接认证）
      */
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
-    override suspend fun `bindDevice`(`pairCode`: kotlin.String, `deviceName`: kotlin.String) {
+    override suspend fun `bindDevice`(`pairCode`: kotlin.String, `deviceName`: kotlin.String) : kotlin.String {
         return uniffiRustCallAsync(
         callWithPointer { thisPtr ->
             UniffiLib.INSTANCE.uniffi_aginxium_fn_method_ffiaginxclient_bind_device(
@@ -1505,12 +1477,11 @@ open class FfiAginxClient: Disposable, AutoCloseable, FfiAginxClientInterface {
                 FfiConverterString.lower(`pairCode`),FfiConverterString.lower(`deviceName`),
             )
         },
-        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_poll_void(future, callback, continuation) },
-        { future, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_complete_void(future, continuation) },
-        { future -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_free_void(future) },
+        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_free_rust_buffer(future) },
         // lift function
-        { Unit },
-        
+        { FfiConverterString.lift(it) },
         // Error FFI converter
         FfiException.ErrorHandler,
     )
@@ -1640,40 +1611,16 @@ open class FfiAginxClient: Disposable, AutoCloseable, FfiAginxClientInterface {
 
     
     /**
-     * 列出目录（返回 JSON 字符串）
-     */
-    @Throws(FfiException::class)
-    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
-    override suspend fun `listDirectory`(`path`: kotlin.String) : kotlin.String {
-        return uniffiRustCallAsync(
-        callWithPointer { thisPtr ->
-            UniffiLib.INSTANCE.uniffi_aginxium_fn_method_ffiaginxclient_list_directory(
-                thisPtr,
-                FfiConverterString.lower(`path`),
-            )
-        },
-        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_poll_rust_buffer(future, callback, continuation) },
-        { future, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_complete_rust_buffer(future, continuation) },
-        { future -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_free_rust_buffer(future) },
-        // lift function
-        { FfiConverterString.lift(it) },
-        // Error FFI converter
-        FfiException.ErrorHandler,
-    )
-    }
-
-    
-    /**
      * 加载已有会话
      */
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
-    override suspend fun `loadSession`(`sessionId`: kotlin.String) {
+    override suspend fun `loadSession`(`sessionId`: kotlin.String, `agentId`: kotlin.String) {
         return uniffiRustCallAsync(
         callWithPointer { thisPtr ->
             UniffiLib.INSTANCE.uniffi_aginxium_fn_method_ffiaginxclient_load_session(
                 thisPtr,
-                FfiConverterString.lower(`sessionId`),
+                FfiConverterString.lower(`sessionId`),FfiConverterString.lower(`agentId`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_poll_void(future, callback, continuation) },
@@ -1724,30 +1671,6 @@ open class FfiAginxClient: Disposable, AutoCloseable, FfiAginxClientInterface {
             UniffiLib.INSTANCE.uniffi_aginxium_fn_method_ffiaginxclient_raw_request(
                 thisPtr,
                 FfiConverterString.lower(`method`),FfiConverterOptionalString.lower(`paramsJson`),
-            )
-        },
-        { future, callback, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_poll_rust_buffer(future, callback, continuation) },
-        { future, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_complete_rust_buffer(future, continuation) },
-        { future -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_free_rust_buffer(future) },
-        // lift function
-        { FfiConverterString.lift(it) },
-        // Error FFI converter
-        FfiException.ErrorHandler,
-    )
-    }
-
-    
-    /**
-     * 读取文件（返回 JSON 字符串）
-     */
-    @Throws(FfiException::class)
-    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
-    override suspend fun `readFile`(`path`: kotlin.String) : kotlin.String {
-        return uniffiRustCallAsync(
-        callWithPointer { thisPtr ->
-            UniffiLib.INSTANCE.uniffi_aginxium_fn_method_ffiaginxclient_read_file(
-                thisPtr,
-                FfiConverterString.lower(`path`),
             )
         },
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_poll_rust_buffer(future, callback, continuation) },
@@ -1820,12 +1743,14 @@ open class FfiAginxClient: Disposable, AutoCloseable, FfiAginxClientInterface {
      * URL 格式:
      * - agent://id.relay.yinnho.cn     (TLS relay)
      * - agent://host:port              (直连)
+     *
+     * auth_token: 绑定设备时获得的 token，传空字符串表示无 token（首次绑定）
      */
     @Throws(FfiException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
-     suspend fun `connect`(`url`: kotlin.String) : FfiAginxClient {
+     suspend fun `connect`(`url`: kotlin.String, `authToken`: kotlin.String) : FfiAginxClient {
         return uniffiRustCallAsync(
-        UniffiLib.INSTANCE.uniffi_aginxium_fn_constructor_ffiaginxclient_connect(FfiConverterString.lower(`url`),),
+        UniffiLib.INSTANCE.uniffi_aginxium_fn_constructor_ffiaginxclient_connect(FfiConverterString.lower(`url`),FfiConverterString.lower(`authToken`),),
         { future, callback, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_poll_pointer(future, callback, continuation) },
         { future, continuation -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_complete_pointer(future, continuation) },
         { future -> UniffiLib.INSTANCE.ffi_aginxium_rust_future_free_pointer(future) },

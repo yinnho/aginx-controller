@@ -23,7 +23,6 @@ import net.aginx.controller.data.model.RequestPermissionNotification
 import net.aginx.controller.data.model.SessionUpdate
 import net.aginx.controller.data.model.SessionUpdateNotification
 import net.aginx.controller.db.AppDatabase
-import net.aginx.controller.db.entities.AgentEntity
 import net.aginx.controller.db.entities.AginxEntity
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,7 +33,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getInstance(application)
     private val aginxDao = db.aginxDao()
-    private val agentDao = db.agentDao()
 
     // Aginx 列表
     private val _aginxList = MutableStateFlow<List<Aginx>>(emptyList())
@@ -268,20 +266,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ========== 文件浏览 ==========
-
-    suspend fun listDirectory(path: String? = null): net.aginx.controller.client.DirectoryListing? {
-        val client = currentClient ?: return null
-        if (!client.isConnected()) return null
-        return withContext(Dispatchers.IO) { client.listDirectory(path) }
-    }
-
-    suspend fun readFile(path: String): net.aginx.controller.client.FileContent? {
-        val client = currentClient ?: return null
-        if (!client.isConnected()) return null
-        return withContext(Dispatchers.IO) { client.readFile(path) }
-    }
-
     // ========== 会话和消息 ==========
 
     suspend fun createSession(agentId: String, workdir: String? = null): String? {
@@ -292,11 +276,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    suspend fun loadSession(sessionId: String): String? {
+    suspend fun loadSession(sessionId: String, agentId: String? = null): String? {
         val client = currentClient ?: return null
         if (!client.isConnected()) return null
         return withContext(Dispatchers.IO) {
-            client.loadSession(sessionId)?.sessionId
+            client.loadSession(sessionId, agentId)?.sessionId
         }
     }
 
@@ -315,10 +299,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val finalText = _streamingText.value
                 _isStreaming.value = false
                 _streamingText.value = ""
-                if (finalText.isNotBlank() && result is SendMessageResult.Response) {
-                    onResponse(SendMessageResult.Response(finalText))
-                } else {
-                    onResponse(result)
+                when {
+                    finalText.isNotBlank() && result is SendMessageResult.Response -> {
+                        onResponse(SendMessageResult.Response(finalText))
+                    }
+                    result is SendMessageResult.Response && result.content.startsWith("发送失败") -> {
+                        // prompt 发送失败
+                        onResponse(result)
+                    }
+                    result is SendMessageResult.Response -> {
+                        // 正常完成，用流式文本（可能为空）
+                        onResponse(SendMessageResult.Response(if (finalText.isNotBlank()) finalText else result.content))
+                    }
+                    else -> {
+                        onResponse(result)
+                    }
                 }
             }
         }
@@ -356,44 +351,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return withContext(Dispatchers.IO) { client.deleteConversation(sessionId, agentId) ?: false }
     }
 
-    suspend fun getConversationMessages(sessionId: String, limit: Int = 10): List<net.aginx.controller.client.ConversationMessage>? {
+    suspend fun getConversationMessages(sessionId: String, agentId: String, limit: Int = 10): List<net.aginx.controller.client.ConversationMessage>? {
         val client = currentClient ?: return null
         if (!client.isConnected()) return null
-        return withContext(Dispatchers.IO) { client.getConversationMessages(sessionId, limit) }
+        return withContext(Dispatchers.IO) { client.getConversationMessages(sessionId, agentId, limit) }
     }
 
-    // ========== Agent 工作目录 ==========
-
-    suspend fun getAgentWorkdir(aginxId: String, agentId: String): String? {
-        return agentDao.getById(agentId, aginxId)?.workdir
-    }
-
-    suspend fun saveAgentWorkdir(aginxId: String, agentId: String, workdir: String?) {
-        withContext(Dispatchers.IO) {
-            val existing = agentDao.getById(agentId, aginxId)
-            if (existing == null) {
-                val agentInfo = _agentList.value.find { it.id == agentId }
-                if (agentInfo != null) {
-                    agentDao.insert(AgentEntity(
-                        id = agentInfo.id,
-                        numericId = agentInfo.numericId ?: 0L,
-                        localId = agentInfo.id,
-                        aginxId = aginxId,
-                        nickname = agentInfo.name,
-                        avatar = agentInfo.avatar,
-                        description = agentInfo.description,
-                        personality = null,
-                        capabilities = agentInfo.capabilities.joinToString(","),
-                        workdir = workdir
-                    ))
-                } else {
-                    agentDao.updateWorkdir(agentId, aginxId, workdir)
-                }
-            } else {
-                agentDao.updateWorkdir(agentId, aginxId, workdir)
-            }
-        }
-    }
 }
 
 fun AginxEntity.toModel() = Aginx(

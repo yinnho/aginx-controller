@@ -78,10 +78,6 @@ fun NavGraph(viewModel: MainViewModel) {
                 onSelectConversation = { serverSessionId ->
                     // 恢复已有对话，传递服务器 sessionId
                     navController.navigate("chat/$aginxId/$agentId/$serverSessionId")
-                },
-                onCreateNewConversation = {
-                    // 新对话：传空 sessionId，ChatScreen 会创建新会话
-                    navController.navigate("chat/$aginxId/$agentId/new")
                 }
             )
         }
@@ -102,12 +98,9 @@ fun NavGraph(viewModel: MainViewModel) {
             ChatScreen(
                 aginxId = aginxId,
                 agentId = agentId,
-                conversationId = if (sessionId == "new") null else sessionId,
+                conversationId = sessionId,
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
-                onNewConversation = {
-                    navController.navigate("chat/$aginxId/$agentId/new")
-                }
             )
         }
     }

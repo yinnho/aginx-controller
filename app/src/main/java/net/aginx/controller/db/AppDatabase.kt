@@ -4,21 +4,17 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import net.aginx.controller.db.dao.*
-import net.aginx.controller.db.entities.*
+import net.aginx.controller.db.dao.AginxDao
+import net.aginx.controller.db.entities.AginxEntity
 
 @Database(
-    entities = [
-        AginxEntity::class,
-        AgentEntity::class
-    ],
-    version = 2,
+    entities = [AginxEntity::class],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun aginxDao(): AginxDao
-    abstract fun agentDao(): AgentDao
 
     companion object {
         @Volatile
